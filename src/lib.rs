@@ -2,19 +2,20 @@
 #![allow(unused_imports)]
 #![forbid(unsafe_code)]
 
-use std::f64::consts::PI;
+use csgrs::float_types::{PI, Real};
 use nalgebra::{Point3, Vector3};
-use csgrs::{
-    CSG, Polygon, Vertex, // or wherever your CSG library types are
-    polygon_to_polyline2d,
-};
+use csgrs::polygon::Polygon;
+use csgrs::vertex::Vertex;
+use csgrs::plane::Plane;
+
+type CSG = csgrs::csg::CSG<()>;
 
 /// A simplified structure representing a toolpath as polylines in 3D.
 /// In more advanced designs, you might store feed rates, speeds, 
 /// tool orientation, or arcs, etc.
 #[derive(Debug, Clone)]
 pub struct ToolpathSegment {
-    pub points: Vec<Point3<f64>>,
+    pub points: Vec<Point3<Real>>,
 }
 
 /// A collection of toolpaths (e.g. for each layer in additive, or each pass in subtractive).
@@ -28,24 +29,24 @@ pub trait ToolpathGenerator {
     type Config;
     
     /// Primary entry point to produce toolpaths.
-    fn generate_toolpaths(&self, model: &CSG<()>, config: &Self::Config) -> ToolpathSet;
+    fn generate_toolpaths(&self, model: &CSG, config: &Self::Config) -> ToolpathSet;
 }
 
 /// Configuration for additive manufacturing (3D printing).
 #[derive(Debug, Clone)]
 pub struct AdditiveConfig {
-    pub layer_height: f64,
-    pub min_z: f64,
-    pub max_z: f64,
+    pub layer_height: Real,
+    pub min_z: Real,
+    pub max_z: Real,
     // You could add nozzle diameter, infill %, speeds, etc.
 }
 
 /// Configuration for subtractive manufacturing (CNC).
 #[derive(Debug, Clone)]
 pub struct SubtractiveConfig {
-    pub step_down: f64,
-    pub min_z: f64,
-    pub max_z: f64,
+    pub step_down: Real,
+    pub min_z: Real,
+    pub max_z: Real,
     // You could add tool diameter, offset strategies, step-over, etc.
 }
 
@@ -55,7 +56,7 @@ pub struct AdditiveToolpathGenerator;
 impl ToolpathGenerator for AdditiveToolpathGenerator {
     type Config = AdditiveConfig;
 
-    fn generate_toolpaths(&self, model: &CSG<()>, cfg: &AdditiveConfig) -> ToolpathSet {
+    fn generate_toolpaths(&self, model: &CSG, cfg: &AdditiveConfig) -> ToolpathSet {
         let mut all_segments = Vec::new();
         
         // 1) We iterate over z-layers from min_z up to max_z in increments of cfg.layer_height
@@ -69,7 +70,7 @@ impl ToolpathGenerator for AdditiveToolpathGenerator {
             // Translate the model by (0,0, -z) so that the plane z=0 cuts at original z= your layer.
             let model_shifted = model.translate(Vector3::new(0.0, 0.0, -z));
             // Now slice/cut at z=0
-            let cross_section = model_shifted.project(true);
+            let cross_section = model_shifted.slice(Plane { normal: Vector3::z(), w: 0.0 });
             
             // 3) Convert cross-section polygons into polylines.
             //    Each polygon is in Z=0 after slicing. We'll then translate back up by +z.
@@ -79,10 +80,10 @@ impl ToolpathGenerator for AdditiveToolpathGenerator {
                 }
                 
                 // Convert the polygon (assumed planar at z=0) to a 2D polyline
-                let pline2d = polygon_to_polyline2d(poly);
+                let pline2d = poly.to_polyline();
                 // Then convert that 2D polyline to a 3D path at z
                 let mut points_3d = Vec::new();
-                for v2d in pline2d {
+                for v2d in pline2d.vertex_data {
                     points_3d.push(Point3::new(v2d.x, v2d.y, z));
                 }
                 // Form a path segment
@@ -106,7 +107,7 @@ pub struct SubtractiveToolpathGenerator;
 impl ToolpathGenerator for SubtractiveToolpathGenerator {
     type Config = SubtractiveConfig;
 
-    fn generate_toolpaths(&self, model: &CSG<()>, cfg: &SubtractiveConfig) -> ToolpathSet {
+    fn generate_toolpaths(&self, model: &CSG, cfg: &SubtractiveConfig) -> ToolpathSet {
         let mut all_segments = Vec::new();
 
         // Example approach:
@@ -122,15 +123,15 @@ impl ToolpathGenerator for SubtractiveToolpathGenerator {
             // For simplicity, just show the direct cross-section.
 
             let model_shifted = model.translate(Vector3::new(0.0, 0.0, -z));
-            let cross_section = model_shifted.project(true);
+            let cross_section = model_shifted.slice(Plane { normal: Vector3::z(), w: 0.0 });
 
             for poly in &cross_section.polygons {
                 if poly.vertices.len() < 3 {
                     continue;
                 }
-                let pline2d = polygon_to_polyline2d(poly);
+                let pline2d = poly.to_polyline();
                 let mut points_3d = Vec::new();
-                for v2d in pline2d {
+                for v2d in pline2d.vertex_data {
                     points_3d.push(Point3::new(v2d.x, v2d.y, z));
                 }
                 all_segments.push(ToolpathSegment {

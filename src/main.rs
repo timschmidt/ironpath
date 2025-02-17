@@ -1,6 +1,14 @@
+use ironpath::AdditiveToolpathGenerator;
+use ironpath::AdditiveConfig;
+use ironpath::SubtractiveToolpathGenerator;
+use ironpath::SubtractiveConfig;
+use ironpath::ToolpathGenerator;
+
+type CSG = csgrs::csg::CSG<()>;
+
 fn main() {
     // 1) Create a sample geometry (a cube).
-    let csg_cube = CSG::cube(Some((&[0.0, 0.0, 0.0], &[10.0, 10.0, 10.0])));
+    let csg_cube = CSG::cube(10.0, 10.0, 10.0, None);
 
     // 2) Instantiate the slicer objects.
     let additive_slicer = AdditiveToolpathGenerator;
